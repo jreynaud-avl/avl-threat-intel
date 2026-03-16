@@ -1,0 +1,5 @@
+threat_intel.db
+feeds.local.yaml
+*.log
+__pycache__/
+*.pyc
