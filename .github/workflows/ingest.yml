@@ -2,12 +2,14 @@ name: Threat Intel Ingestion
 
 on:
   schedule:
-    - cron: '0 */1 * * *'   # every 6 hours — adjust as needed
-  workflow_dispatch:          # allows you to trigger it manually from GitHub UI
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout repo
@@ -31,7 +33,7 @@ jobs:
       - name: Run ingestion
         run: python threat_intel_ingestion.py
         env:
-          OTX_API_KEY: ${{ secrets.OTX_API_KEY }}   # only needed if using OTX feed
+          OTX_API_KEY: ${{ secrets.OTX_API_KEY }}
 
       - name: Save database cache
         uses: actions/cache@v4
