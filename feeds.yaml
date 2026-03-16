@@ -1,0 +1,182 @@
+# =============================================================================
+# Threat Intelligence Feeds Configuration
+# =============================================================================
+# Edit this file to add, remove, or disable feeds.
+# The ingestion script reads this at runtime — no code changes needed.
+#
+# Required fields:  name, url, type
+# Optional fields:  tags, enabled, headers, backfill
+#
+# Feed types:
+#   rss   — RSS or Atom feed URL
+#   html  — single HTML page to scrape
+#   pdf   — direct URL to a PDF file
+#   api   — REST API endpoint returning JSON
+#
+# Backfill strategies (applied only on a feed's very first run):
+#   none        — just fetch whatever the feed currently exposes (default)
+#   paginated   — walk numbered pages:  archive_url with {page} placeholder
+#   api         — paginate via query params (for type: api feeds)
+#
+# API keys: use environment variable placeholders like ${OTX_API_KEY}.
+# The script expands these at runtime from your shell environment.
+# Never commit real keys to this file.
+# =============================================================================
+
+feeds:
+
+  # ---------------------------------------------------------------------------
+  # RSS / Atom feeds
+  # ---------------------------------------------------------------------------
+
+  - name: CISA Advisories
+    url: https://www.cisa.gov/cybersecurity-advisories/all.xml
+    type: rss
+    tags: [government, advisory, us]
+    backfill:
+      strategy: paginated
+      archive_url: https://www.cisa.gov/cybersecurity-advisories/all.xml?page={page}
+      max_pages: 20
+      page_delay: 3.0
+
+  - name: NCSC UK
+    url: https://www.ncsc.gov.uk/api/1/services/v1/report-rss-feed.xml
+    type: rss
+    tags: [government, advisory, uk]
+    backfill:
+      strategy: none   # NCSC feed does not support pagination
+
+  - name: Google Threat Intelligence Blog
+    url: https://cloud.google.com/blog/topics/threat-intelligence/rss.xml
+    type: rss
+    tags: [vendor, mandiant]
+    backfill:
+      strategy: paginated
+      archive_url: https://cloud.google.com/blog/topics/threat-intelligence/rss.xml?page={page}
+      max_pages: 15
+      page_delay: 2.0
+
+  - name: Microsoft Security Blog
+    url: https://www.microsoft.com/en-us/security/blog/feed/
+    type: rss
+    tags: [vendor, mstic, microsoft]
+    backfill:
+      strategy: paginated
+      archive_url: https://www.microsoft.com/en-us/security/blog/feed/?paged={page}
+      max_pages: 20
+      page_delay: 2.0
+
+  - name: Crowdstrike Blog
+    url: https://www.crowdstrike.com/blog/feed/
+    type: rss
+    tags: [vendor, crowdstrike]
+    backfill:
+      strategy: paginated
+      archive_url: https://www.crowdstrike.com/blog/feed/?paged={page}
+      max_pages: 15
+      page_delay: 3.0
+
+  - name: Palo Alto Unit 42
+    url: https://unit42.paloaltonetworks.com/feed/
+    type: rss
+    tags: [vendor, unit42]
+    backfill:
+      strategy: paginated
+      archive_url: https://unit42.paloaltonetworks.com/page/{page}/feed/
+      max_pages: 20
+      page_delay: 3.0
+
+  - name: Recorded Future Blog
+    url: https://www.recordedfuture.com/blog/rss.xml
+    type: rss
+    tags: [vendor, recorded-future]
+    backfill:
+      strategy: paginated
+      archive_url: https://www.recordedfuture.com/blog/rss.xml?paged={page}
+      max_pages: 10
+      page_delay: 2.0
+
+  - name: Elastic Security Labs
+    url: https://www.elastic.co/security-labs/rss/feed.xml
+    type: rss
+    tags: [vendor, elastic, malware]
+    backfill:
+      strategy: none
+
+  - name: Talos Intelligence Blog
+    url: https://feeds.feedburner.com/feedburner/Talos
+    type: rss
+    tags: [vendor, cisco, talos]
+    backfill:
+      strategy: none
+
+  - name: Sekoia Blog
+    url: https://blog.sekoia.io/feed/
+    type: rss
+    tags: [vendor, sekoia]
+    backfill:
+      strategy: paginated
+      archive_url: https://blog.sekoia.io/feed/?paged={page}
+      max_pages: 10
+      page_delay: 2.0
+
+  - name: ESET WeLiveSecurity
+    url: https://www.welivesecurity.com/feed/
+    type: rss
+    tags: [vendor, eset]
+    backfill:
+      strategy: paginated
+      archive_url: https://www.welivesecurity.com/feed/?paged={page}
+      max_pages: 15
+      page_delay: 2.0
+
+  - name: Symantec Threat Intelligence
+    url: https://symantec-enterprise-blogs.security.com/blogs/threat-intelligence/rss.xml
+    type: rss
+    tags: [vendor, symantec, broadcom]
+    backfill:
+      strategy: none
+
+  # ---------------------------------------------------------------------------
+  # HTML scrape (no RSS feed available)
+  # ---------------------------------------------------------------------------
+
+  - name: SANS ISC Diary
+    url: https://isc.sans.edu/diary.html
+    type: html
+    tags: [community, sans]
+    backfill:
+      strategy: paginated
+      archive_url: https://isc.sans.edu/diary.html?storyid={page}
+      max_pages: 30
+      page_delay: 2.0
+
+  # ---------------------------------------------------------------------------
+  # PDF reports — add specific advisory URLs here as needed
+  # Backfill does not apply to PDFs (each is a discrete file)
+  # ---------------------------------------------------------------------------
+
+  # - name: "CISA Advisory AA24-190A"
+  #   url: https://www.cisa.gov/sites/default/files/2024-07/aa24-190a.pdf
+  #   type: pdf
+  #   tags: [government, advisory, us]
+
+  # ---------------------------------------------------------------------------
+  # REST API feeds
+  # ---------------------------------------------------------------------------
+
+  # AlienVault OTX — requires free account API key
+  # Set OTX_API_KEY in your environment, do not paste the key here directly
+  # - name: AlienVault OTX
+  #   url: https://otx.alienvault.com/api/v1/pulses/subscribed
+  #   type: api
+  #   tags: [community, ioc, otx]
+  #   headers:
+  #     X-OTX-API-KEY: ${OTX_API_KEY}
+  #   backfill:
+  #     strategy: api
+  #     limit_param: limit
+  #     limit_value: 50
+  #     page_param: page
+  #     max_pages: 20
+  #     page_delay: 2.0
