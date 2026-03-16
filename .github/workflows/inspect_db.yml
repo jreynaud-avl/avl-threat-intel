@@ -1,0 +1,29 @@
+name: Inspect Database
+
+on:
+  workflow_dispatch:    # manual trigger only
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Restore database cache
+        uses: actions/cache@v4
+        with:
+          path: threat_intel.db
+          key: threat-intel-db-${{ runner.os }}
+          restore-keys: threat-intel-db-
+
+      - name: Inspect database
+        run: python inspect_db.py
