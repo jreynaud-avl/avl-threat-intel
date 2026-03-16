@@ -33,6 +33,7 @@ feeds:
     url: https://www.cisa.gov/cybersecurity-advisories/all.xml
     type: rss
     tags: [government, advisory, us]
+    enabled: false
     backfill:
       strategy: paginated
       archive_url: https://www.cisa.gov/cybersecurity-advisories/all.xml?page={page}
@@ -43,6 +44,7 @@ feeds:
     url: https://www.ncsc.gov.uk/api/1/services/v1/report-rss-feed.xml
     type: rss
     tags: [government, advisory, uk]
+    enabled: false
     backfill:
       strategy: none   # NCSC feed does not support pagination
 
@@ -80,6 +82,7 @@ feeds:
     url: https://unit42.paloaltonetworks.com/feed/
     type: rss
     tags: [vendor, unit42]
+    enabled: false
     backfill:
       strategy: paginated
       archive_url: https://unit42.paloaltonetworks.com/page/{page}/feed/
@@ -90,6 +93,7 @@ feeds:
     url: https://www.recordedfuture.com/blog/rss.xml
     type: rss
     tags: [vendor, recorded-future]
+    enabled: false
     backfill:
       strategy: paginated
       archive_url: https://www.recordedfuture.com/blog/rss.xml?paged={page}
@@ -100,6 +104,7 @@ feeds:
     url: https://www.elastic.co/security-labs/rss/feed.xml
     type: rss
     tags: [vendor, elastic, malware]
+    enabled: false
     backfill:
       strategy: none
 
@@ -107,6 +112,7 @@ feeds:
     url: https://feeds.feedburner.com/feedburner/Talos
     type: rss
     tags: [vendor, cisco, talos]
+    enabled: false
     backfill:
       strategy: none
 
@@ -114,6 +120,7 @@ feeds:
     url: https://blog.sekoia.io/feed/
     type: rss
     tags: [vendor, sekoia]
+    enabled: false
     backfill:
       strategy: paginated
       archive_url: https://blog.sekoia.io/feed/?paged={page}
@@ -124,6 +131,7 @@ feeds:
     url: https://www.welivesecurity.com/feed/
     type: rss
     tags: [vendor, eset]
+    enabled: false
     backfill:
       strategy: paginated
       archive_url: https://www.welivesecurity.com/feed/?paged={page}
@@ -134,6 +142,7 @@ feeds:
     url: https://symantec-enterprise-blogs.security.com/blogs/threat-intelligence/rss.xml
     type: rss
     tags: [vendor, symantec, broadcom]
+    enabled: false
     backfill:
       strategy: none
 
@@ -145,6 +154,7 @@ feeds:
     url: https://isc.sans.edu/diary.html
     type: html
     tags: [community, sans]
+    enabled: false
     backfill:
       strategy: paginated
       archive_url: https://isc.sans.edu/diary.html?storyid={page}
