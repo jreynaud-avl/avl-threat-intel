@@ -1,0 +1,40 @@
+name: Threat Intel Ingestion
+
+on:
+  schedule:
+    - cron: '0 */1 * * *'   # every 6 hours — adjust as needed
+  workflow_dispatch:          # allows you to trigger it manually from GitHub UI
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore database cache
+        uses: actions/cache@v4
+        with:
+          path: threat_intel.db
+          key: threat-intel-db-${{ runner.os }}
+          restore-keys: threat-intel-db-
+
+      - name: Run ingestion
+        run: python threat_intel_ingestion.py
+        env:
+          OTX_API_KEY: ${{ secrets.OTX_API_KEY }}   # only needed if using OTX feed
+
+      - name: Save database cache
+        uses: actions/cache@v4
+        with:
+          path: threat_intel.db
+          key: threat-intel-db-${{ runner.os }}
