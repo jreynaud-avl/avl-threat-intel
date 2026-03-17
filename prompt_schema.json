@@ -1,0 +1,109 @@
+{
+  "schema": {
+    "is_threat_intel": true,
+    "skip_reason": null,
+    "confidence": "high | medium | low",
+    "report_date": "YYYY-MM-DD or null",
+    "threat_actors": [
+      {
+        "name": "Primary name used in the report",
+        "aliases": ["alias1", "alias2"],
+        "type": "nation-state | cybercriminal | hacktivist | insider | unknown",
+        "attribution": "Country or organisation if stated, else null"
+      }
+    ],
+    "malware_families": [
+      {
+        "name": "Malware name",
+        "type": "RAT | ransomware | infostealer | backdoor | loader | wiper | rootkit | botnet | other",
+        "capabilities": ["capability1", "capability2"]
+      }
+    ],
+    "ttps": [
+      {
+        "mitre_id": "T1566.001",
+        "name": "Technique name",
+        "tactic": "MITRE tactic name"
+      }
+    ],
+    "iocs": {
+      "ips": [],
+      "domains": [],
+      "hashes": [],
+      "urls": [],
+      "emails": []
+    },
+    "targets": {
+      "industries": [],
+      "regions": [],
+      "organisations": []
+    },
+    "vulnerabilities": [
+      {
+        "cve_id": "CVE-YYYY-NNNNN or null if no CVE assigned",
+        "product": "Affected product or platform",
+        "severity": "Critical | High | Medium | Low | Unknown"
+      }
+    ],
+    "summary": "Two to three sentence analyst summary of the key threat intelligence findings. Written factually, no marketing language.",
+    "relevance_tags": []
+  },
+
+  "rules": [
+    "Return empty arrays [] for array fields where no data is present. Never omit a field from the schema.",
+    "Return null for string fields where no data is present. Never omit a field from the schema.",
+    "Only include MITRE ATT&CK technique IDs in the format T#### or T####.### — do not invent IDs.",
+    "Only include IOCs that are explicitly stated in the report. Do not infer or fabricate IOCs.",
+    "threat_actors.name should use the primary name used by the reporting vendor. Add alternative names from other vendors in aliases.",
+    "confidence reflects attribution and detail clarity: high = clearly attributed with strong evidence, medium = partial attribution or unconfirmed claims, low = vague or speculative.",
+    "summary must be written from an analyst perspective, not a marketing perspective. Do not use phrases like 'cutting-edge', 'robust', or 'industry-leading'.",
+    "relevance_tags must only contain values from the allowed tags list defined in this schema. Do not invent new tags.",
+    "If a vulnerability is mentioned without a CVE ID, still include it in vulnerabilities with cve_id set to null.",
+    "If a threat actor type is not clearly stated, use 'unknown' rather than guessing.",
+    "Always respond with valid JSON only. No preamble, no explanation, no markdown code fences. Just the raw JSON object."
+  ],
+
+  "allowed_relevance_tags": [
+    "apt",
+    "ransomware",
+    "phishing",
+    "spearphishing",
+    "malware",
+    "infostealer",
+    "backdoor",
+    "rootkit",
+    "botnet",
+    "loader",
+    "wiper",
+    "rat",
+    "zero-day",
+    "vulnerability",
+    "exploit",
+    "supply-chain",
+    "credential-theft",
+    "data-breach",
+    "espionage",
+    "financial-crime",
+    "hacktivism",
+    "insider-threat",
+    "living-off-the-land",
+    "social-engineering",
+    "business-email-compromise",
+    "cryptomining",
+    "ics-ot",
+    "mobile",
+    "cloud",
+    "ai-threat"
+  ],
+
+  "allowed_skip_reasons": [
+    "marketing",
+    "product announcement",
+    "conference schedule",
+    "award nomination",
+    "general news",
+    "opinion piece",
+    "hiring post",
+    "research summary without threat data"
+  ]
+}
