@@ -1,12 +1,17 @@
-name: Threat Intel Ingestion
+name: Threat Intel Pipeline
 
 on:
   schedule:
-    - cron: '0 */1 * * *'
-  workflow_dispatch:
+    - cron: '0 */1 * * *'   # every 1 hours
+  workflow_dispatch:          # manual trigger from GitHub UI
 
 jobs:
+
+  # ---------------------------------------------------------------------------
+  # Stage 1 — Feed ingestion
+  # ---------------------------------------------------------------------------
   ingest:
+    name: Stage 1 — Ingest feeds
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -23,20 +28,95 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore database cache
+      - name: Restore raw database cache
         uses: actions/cache@v4
         with:
           path: threat_intel.db
-          key: threat-intel-db-${{ runner.os }}
-          restore-keys: threat-intel-db-
+          key: threat-intel-raw-db-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: threat-intel-raw-db-${{ runner.os }}-
 
       - name: Run ingestion
         run: python threat_intel_ingestion.py
         env:
           OTX_API_KEY: ${{ secrets.OTX_API_KEY }}
 
-      - name: Save database cache
+      - name: Print pending count
+        run: python threat_intel_ingestion.py --pending
+
+      - name: Save raw database cache
         uses: actions/cache@v4
         with:
           path: threat_intel.db
-          key: threat-intel-db-${{ runner.os }}
+          key: threat-intel-raw-db-${{ runner.os }}-${{ github.run_id }}
+
+      # Pass the DB to Stage 2 as an artifact so both jobs share the same file
+      - name: Upload raw DB for Stage 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-db
+          path: threat_intel.db
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Stage 2 — Claude analysis
+  # ---------------------------------------------------------------------------
+  analyse:
+    name: Stage 2 — Analyse with Claude
+    runs-on: ubuntu-latest
+    needs: ingest    # only runs after Stage 1 completes successfully
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Download the raw DB written by Stage 1
+      - name: Download raw DB from Stage 1
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-db
+
+      # Restore the analysed DB from previous runs
+      - name: Restore analysed database cache
+        uses: actions/cache@v4
+        with:
+          path: threat_intel_analysed.db
+          key: threat-intel-analysed-db-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: threat-intel-analysed-db-${{ runner.os }}-
+
+      - name: Run analysis
+        run: python threat_intel_analysis.py --limit 50
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Save analysed database cache
+        uses: actions/cache@v4
+        with:
+          path: threat_intel_analysed.db
+          key: threat-intel-analysed-db-${{ runner.os }}-${{ github.run_id }}
+
+      # Upload both DBs as artifacts for inspection
+      - name: Upload databases as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: threat-intel-databases
+          path: |
+            threat_intel.db
+            threat_intel_analysed.db
+          retention-days: 7
+
+      # Write the updated raw DB (with status changes) back to cache
+      - name: Upload updated raw DB to cache
+        uses: actions/cache@v4
+        with:
+          path: threat_intel.db
+          key: threat-intel-raw-db-${{ runner.os }}-${{ github.run_id }}
