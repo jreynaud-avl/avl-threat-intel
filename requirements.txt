@@ -4,3 +4,4 @@ beautifulsoup4
 trafilatura
 PyMuPDF
 pyyaml
+anthropic
