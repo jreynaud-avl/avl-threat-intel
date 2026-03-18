@@ -1,0 +1,34 @@
+name: Rebuild Analysed Database
+
+on:
+  workflow_dispatch:    # manual trigger only
+
+jobs:
+  rebuild:
+    name: Drop and rebuild analysed DB
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run rebuild
+        run: python rebuild_db.py
+
+      - name: Commit changes to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add threat_intel.db
+          git rm --cached threat_intel_analysed.db 2>/dev/null || true
+          git diff --staged --quiet && echo "No changes to commit" || git commit -m "chore: rebuild analysed DB — reset all reports to pending [skip ci]"
+          git push
