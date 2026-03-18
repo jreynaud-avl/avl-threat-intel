@@ -23,6 +23,7 @@ Usage:
 import argparse
 import json
 import logging
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -41,9 +42,9 @@ DEFAULT_SCHEMA_PATH   = Path("prompt_schema.json")
 DEFAULT_LIMIT         = 50
 MODEL                 = "claude-sonnet-4-6"
 MAX_TOKENS            = 8000
-CONTENT_PREVIEW_CHARS = 12000   # truncate very long articles before sending
+CONTENT_PREVIEW_CHARS = 12000
 RETRY_ATTEMPTS        = 3
-RETRY_DELAY           = 5       # seconds between retries
+RETRY_DELAY           = 5
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,19 +71,18 @@ def load_prompt(
     if not schema_path.exists():
         raise FileNotFoundError(f"Schema file not found: {schema_path}")
 
-    system = system_path.read_text().strip()
-    schema_doc = json.loads(schema_path.read_text())
-
-    schema     = schema_doc["schema"]
-    rules      = schema_doc["rules"]
-    tags       = schema_doc["allowed_relevance_tags"]
+    system       = system_path.read_text().strip()
+    schema_doc   = json.loads(schema_path.read_text())
+    schema       = schema_doc["schema"]
+    rules        = schema_doc["rules"]
+    tags         = schema_doc["allowed_relevance_tags"]
     skip_reasons = schema_doc["allowed_skip_reasons"]
 
     rules_text = "\n".join(f"- {r}" for r in rules)
     tags_text  = ", ".join(tags)
     skip_text  = ", ".join(f'"{r}"' for r in skip_reasons)
 
-    prompt = f"""{system}
+    return f"""{system}
 
 Extract using this exact JSON schema — return nothing else:
 {json.dumps(schema, indent=2)}
@@ -96,8 +96,6 @@ Allowed relevance_tags values (use only these):
 Allowed skip_reason values (use only these):
 {skip_text}"""
 
-    return prompt
-
 
 USER_PROMPT_TEMPLATE = """Analyse the following cybersecurity report and extract structured threat intelligence.
 
@@ -107,6 +105,25 @@ Published: {published_at}
 
 Report content:
 {content}"""
+
+
+# ---------------------------------------------------------------------------
+# IOC sanitisation
+# ---------------------------------------------------------------------------
+
+def defang_url(url: str) -> str:
+    """
+    Defang a URL for safe storage:
+      http  → hxxp
+      https → hxxps
+      .     → [.]
+    """
+    if not url:
+        return url
+    url = re.sub(r'^https', 'hxxps', url)
+    url = re.sub(r'^http(?!s)', 'hxxp', url)
+    url = url.replace('.', '[.]')
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -122,63 +139,73 @@ def init_analysed_db(db_path: Path) -> sqlite3.Connection:
     # Core intelligence records — one row per processed report
     conn.execute("""
         CREATE TABLE IF NOT EXISTS intelligence_reports (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            raw_report_id     INTEGER NOT NULL UNIQUE,
-            source_name       TEXT    NOT NULL,
-            source_url        TEXT,
-            title             TEXT,
-            published_at      TEXT,
-            processed_at      TEXT    NOT NULL,
-            is_threat_intel   INTEGER NOT NULL,
-            skip_reason       TEXT,
-            confidence        TEXT,
-            report_date       TEXT,
-            summary           TEXT,
-            relevance_tags    TEXT,
-            raw_extraction    TEXT    NOT NULL
+            id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+            raw_report_id               INTEGER NOT NULL UNIQUE,
+            source_name                 TEXT    NOT NULL,
+            source_url                  TEXT,
+            title                       TEXT,
+            published_at                TEXT,
+            processed_at                TEXT    NOT NULL,
+            is_threat_intel             INTEGER NOT NULL,
+            skip_reason                 TEXT,
+            confidence                  TEXT,
+            report_date                 TEXT,
+            summary                     TEXT,
+            attack_description          TEXT,       -- Who/What/When/Where/Why + full kill chain prose
+            attack_steps                TEXT,       -- JSON array of sequential numbered steps
+            relevance_tags              TEXT,       -- JSON array
+            raw_extraction              TEXT        NOT NULL,
+            -- Stage 3 flag — set to 1 once detection coverage review is complete
+            detection_coverage_reviewed INTEGER     DEFAULT 0,
+            -- Analyst attribution — populated post-Stage 2 by human analyst
+            avl_attribution             TEXT,
+            avl_confidence              TEXT,
+            -- Detection mapping — JSON array of detection IDs that cover this report
+            mapped_detections           TEXT        DEFAULT '[]'
         )
     """)
 
-    # Threat actors
+    # Threat actors — actor_type and region stored separately
     conn.execute("""
         CREATE TABLE IF NOT EXISTS threat_actors (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             intelligence_id   INTEGER NOT NULL REFERENCES intelligence_reports(id),
             name              TEXT    NOT NULL,
-            aliases           TEXT,
-            type              TEXT,
-            attribution       TEXT
+            aliases           TEXT,       -- JSON array of alternative names
+            actor_type        TEXT,       -- nation-state | cybercriminal | hacktivist | insider | unknown
+            region            TEXT        -- geographic origin e.g. North Korea, China, Iran, unknown
         )
     """)
 
-    # Malware families
+    # Malware families — clean name and typed name stored separately
     conn.execute("""
         CREATE TABLE IF NOT EXISTS malware_families (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            intelligence_id   INTEGER NOT NULL REFERENCES intelligence_reports(id),
-            name              TEXT    NOT NULL,
-            type              TEXT,
-            capabilities      TEXT
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            intelligence_id         INTEGER NOT NULL REFERENCES intelligence_reports(id),
+            malware_name            TEXT,   -- clean common name only e.g. ChatGPTStealer
+            malware_name_with_type  TEXT,   -- clean name + type e.g. ChatGPTStealer [infostealer]
+            type                    TEXT,   -- RAT | ransomware | infostealer | backdoor | loader | wiper | rootkit | botnet | other
+            capabilities            TEXT    -- JSON array
         )
     """)
 
-    # MITRE TTPs
+    # TTPs — mitre_id, mitre_fqn, and technique_usage stored separately
     conn.execute("""
         CREATE TABLE IF NOT EXISTS ttps (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             intelligence_id   INTEGER NOT NULL REFERENCES intelligence_reports(id),
-            mitre_id          TEXT,
-            name              TEXT,
-            tactic            TEXT
+            mitre_id          TEXT,   -- strictly the MITRE ID e.g. T1566.001
+            mitre_fqn         TEXT,   -- strictly the full qualified name e.g. Phishing: Spearphishing Attachment
+            technique_usage   TEXT    -- how the threat actor leveraged this technique in this specific report
         )
     """)
 
-    # IOCs — flattened, one row per IOC value
+    # IOCs — one row per IOC value, URLs defanged
     conn.execute("""
         CREATE TABLE IF NOT EXISTS iocs (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             intelligence_id   INTEGER NOT NULL REFERENCES intelligence_reports(id),
-            ioc_type          TEXT    NOT NULL,
+            ioc_type          TEXT    NOT NULL,  -- ip | domain | hash | url | email
             value             TEXT    NOT NULL,
             UNIQUE(intelligence_id, ioc_type, value)
         )
@@ -189,19 +216,18 @@ def init_analysed_db(db_path: Path) -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS targets (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             intelligence_id   INTEGER NOT NULL REFERENCES intelligence_reports(id),
-            target_type       TEXT    NOT NULL,
+            target_type       TEXT    NOT NULL,  -- industry | region | organisation
             value             TEXT    NOT NULL
         )
     """)
 
-    # Vulnerabilities
+    # Vulnerabilities — cve_id and cve_description stored separately
     conn.execute("""
         CREATE TABLE IF NOT EXISTS vulnerabilities (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             intelligence_id   INTEGER NOT NULL REFERENCES intelligence_reports(id),
-            cve_id            TEXT,
-            product           TEXT,
-            severity          TEXT
+            cve_id            TEXT,   -- strictly the CVE ID only e.g. CVE-2025-31191
+            cve_description   TEXT    -- full description including product, vector, exploitation details
         )
     """)
 
@@ -215,7 +241,7 @@ def init_analysed_db(db_path: Path) -> sqlite3.Connection:
 
 def get_pending_reports(db_path: Path, limit: int) -> list[dict]:
     """
-    Fetch pending reports from the Stage 1 DB distributed evenly across sources.
+    Fetch pending reports distributed evenly across sources.
     Round-robin selection ensures no single source dominates the batch.
     """
     conn = sqlite3.connect(db_path)
@@ -258,7 +284,7 @@ def update_raw_status(
     status: str,
     skip_reason: str = None,
 ) -> None:
-    """Update a report's status (and optional skip_reason) in the Stage 1 DB."""
+    """Update a report's status in the Stage 1 DB."""
     conn = sqlite3.connect(db_path)
     if skip_reason:
         conn.execute(
@@ -282,7 +308,7 @@ def ensure_skip_reason_column(db_path: Path) -> None:
         conn.commit()
         log.info("Added skip_reason column to raw_reports")
     except sqlite3.OperationalError:
-        pass  # Column already exists
+        pass
     conn.close()
 
 
@@ -317,12 +343,15 @@ def call_claude(
                 messages=[{"role": "user", "content": user_prompt}],
             )
 
+            # Warn if response was truncated
+            if response.stop_reason == "max_tokens":
+                log.warning(
+                    f"Response truncated at max_tokens on attempt {attempt} "
+                    f"— consider increasing MAX_TOKENS further"
+                )
+
             raw_text = response.content[0].text.strip()
 
-            # Detect truncated response before attempting JSON parse
-            if response.stop_reason == "max_tokens":
-                log.warning(f"Response truncated at max_tokens — consider increasing MAX_TOKENS")
-          
             # Strip markdown fences if Claude adds them despite instructions
             if raw_text.startswith("```"):
                 raw_text = raw_text.split("\n", 1)[1]
@@ -362,14 +391,16 @@ def write_intelligence(
 ) -> int:
     """
     Write a Claude extraction into the analysed DB.
-    Returns the intelligence_reports row id.
+    Returns the intelligence_reports row id, or -1 if already exists.
     """
     cursor = conn.execute("""
         INSERT OR IGNORE INTO intelligence_reports (
             raw_report_id, source_name, source_url, title, published_at,
             processed_at, is_threat_intel, skip_reason, confidence,
-            report_date, summary, relevance_tags, raw_extraction
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            report_date, summary, attack_description, attack_steps,
+            relevance_tags, raw_extraction,
+            detection_coverage_reviewed, mapped_detections
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '[]')
     """, (
         report["id"],
         report.get("source_name"),
@@ -382,15 +413,18 @@ def write_intelligence(
         extraction.get("confidence"),
         extraction.get("report_date"),
         extraction.get("summary"),
+        extraction.get("attack_description"),
+        json.dumps(extraction.get("attack_steps", [])),
         json.dumps(extraction.get("relevance_tags", [])),
         json.dumps(extraction),
     ))
-    intel_id = cursor.lastrowid
 
-    # If no row was inserted (duplicate raw_report_id), signal caller to skip
+    # If no row was inserted, this report was already processed — signal caller
     if conn.execute("SELECT changes()").fetchone()[0] == 0:
         conn.commit()
         return -1
+
+    intel_id = cursor.lastrowid
 
     # If not threat intel, nothing further to write
     if not extraction.get("is_threat_intel"):
@@ -401,25 +435,26 @@ def write_intelligence(
     for actor in extraction.get("threat_actors", []):
         conn.execute("""
             INSERT INTO threat_actors
-                (intelligence_id, name, aliases, type, attribution)
+                (intelligence_id, name, aliases, actor_type, region)
             VALUES (?, ?, ?, ?, ?)
         """, (
             intel_id,
             actor.get("name"),
             json.dumps(actor.get("aliases", [])),
-            actor.get("type"),
-            actor.get("attribution"),
+            actor.get("actor_type"),
+            actor.get("region"),
         ))
 
     # Malware families
     for malware in extraction.get("malware_families", []):
         conn.execute("""
             INSERT INTO malware_families
-                (intelligence_id, name, type, capabilities)
-            VALUES (?, ?, ?, ?)
+                (intelligence_id, malware_name, malware_name_with_type, type, capabilities)
+            VALUES (?, ?, ?, ?, ?)
         """, (
             intel_id,
-            malware.get("name"),
+            malware.get("malware_name"),
+            malware.get("malware_name_with_type"),
             malware.get("type"),
             json.dumps(malware.get("capabilities", [])),
         ))
@@ -427,41 +462,44 @@ def write_intelligence(
     # TTPs
     for ttp in extraction.get("ttps", []):
         conn.execute("""
-            INSERT INTO ttps (intelligence_id, mitre_id, name, tactic)
+            INSERT INTO ttps (intelligence_id, mitre_id, mitre_fqn, technique_usage)
             VALUES (?, ?, ?, ?)
         """, (
             intel_id,
             ttp.get("mitre_id"),
-            ttp.get("name"),
-            ttp.get("tactic"),
+            ttp.get("mitre_fqn"),
+            ttp.get("technique_usage"),
         ))
 
-    # IOCs — flattened by type
+    # IOCs — defang URLs, flatten by type
     iocs = extraction.get("iocs", {})
     ioc_type_map = {
-        "ips": "ip",
+        "ips":     "ip",
         "domains": "domain",
-        "hashes": "hash",
-        "urls": "url",
-        "emails": "email",
+        "hashes":  "hash",
+        "urls":    "url",
+        "emails":  "email",
     }
     for field, ioc_type in ioc_type_map.items():
         for value in iocs.get(field, []):
-            if value:
-                try:
-                    conn.execute("""
-                        INSERT OR IGNORE INTO iocs
-                            (intelligence_id, ioc_type, value)
-                        VALUES (?, ?, ?)
-                    """, (intel_id, ioc_type, value))
-                except sqlite3.IntegrityError:
-                    pass
+            if not value:
+                continue
+            # Defang URLs only
+            if ioc_type == "url":
+                value = defang_url(value)
+            try:
+                conn.execute("""
+                    INSERT OR IGNORE INTO iocs (intelligence_id, ioc_type, value)
+                    VALUES (?, ?, ?)
+                """, (intel_id, ioc_type, value))
+            except sqlite3.IntegrityError:
+                pass
 
     # Targets
     targets = extraction.get("targets", {})
     target_type_map = {
-        "industries": "industry",
-        "regions": "region",
+        "industries":    "industry",
+        "regions":       "region",
         "organisations": "organisation",
     }
     for field, target_type in target_type_map.items():
@@ -472,17 +510,15 @@ def write_intelligence(
                     VALUES (?, ?, ?)
                 """, (intel_id, target_type, value))
 
-    # Vulnerabilities
+    # Vulnerabilities — cve_id and cve_description stored separately
     for vuln in extraction.get("vulnerabilities", []):
         conn.execute("""
-            INSERT INTO vulnerabilities
-                (intelligence_id, cve_id, product, severity)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO vulnerabilities (intelligence_id, cve_id, cve_description)
+            VALUES (?, ?, ?)
         """, (
             intel_id,
             vuln.get("cve_id"),
-            vuln.get("product"),
-            vuln.get("severity"),
+            vuln.get("cve_description"),
         ))
 
     conn.commit()
@@ -530,48 +566,46 @@ def print_summary(analysed_db: Path) -> None:
             SELECT skip_reason, COUNT(*) as count
             FROM intelligence_reports
             WHERE is_threat_intel = 0
-            GROUP BY skip_reason
-            ORDER BY count DESC
+            GROUP BY skip_reason ORDER BY count DESC
         """).fetchall()
         for r in reasons:
             print(f"  {r['skip_reason']}: {r['count']}")
 
     if actors > 0:
         print(f"\nTop threat actors:")
-        top_actors = conn.execute("""
-            SELECT name, attribution, COUNT(*) as mentions
+        for a in conn.execute("""
+            SELECT name, region, actor_type, COUNT(*) as mentions
             FROM threat_actors
-            GROUP BY name
-            ORDER BY mentions DESC
-            LIMIT 10
-        """).fetchall()
-        for a in top_actors:
-            attribution = f" ({a['attribution']})" if a['attribution'] else ""
-            print(f"  {a['name']}{attribution} — {a['mentions']} report(s)")
-
-    if iocs > 0:
-        print(f"\nIOCs by type:")
-        ioc_counts = conn.execute("""
-            SELECT ioc_type, COUNT(*) as count
-            FROM iocs
-            GROUP BY ioc_type
-            ORDER BY count DESC
-        """).fetchall()
-        for i in ioc_counts:
-            print(f"  {i['ioc_type']}: {i['count']}")
+            GROUP BY name ORDER BY mentions DESC LIMIT 10
+        """).fetchall():
+            region = f" ({a['region']})" if a['region'] else ""
+            print(f"  {a['name']}{region} [{a['actor_type']}] — {a['mentions']} report(s)")
 
     if ttps > 0:
         print(f"\nTop TTPs:")
-        top_ttps = conn.execute("""
-            SELECT mitre_id, name, COUNT(*) as count
-            FROM ttps
-            WHERE mitre_id IS NOT NULL
-            GROUP BY mitre_id
-            ORDER BY count DESC
-            LIMIT 10
-        """).fetchall()
-        for t in top_ttps:
-            print(f"  {t['mitre_id']} {t['name']} — {t['count']} report(s)")
+        for t in conn.execute("""
+            SELECT mitre_id, mitre_fqn, COUNT(*) as count
+            FROM ttps WHERE mitre_id IS NOT NULL
+            GROUP BY mitre_id ORDER BY count DESC LIMIT 10
+        """).fetchall():
+            print(f"  {t['mitre_id']} — {t['mitre_fqn']} — {t['count']} report(s)")
+
+    if iocs > 0:
+        print(f"\nIOCs by type:")
+        for i in conn.execute("""
+            SELECT ioc_type, COUNT(*) as count
+            FROM iocs GROUP BY ioc_type ORDER BY count DESC
+        """).fetchall():
+            print(f"  {i['ioc_type']}: {i['count']}")
+
+    if malware > 0:
+        print(f"\nMalware families:")
+        for m in conn.execute("""
+            SELECT malware_name, type, COUNT(*) as count
+            FROM malware_families
+            GROUP BY malware_name ORDER BY count DESC LIMIT 10
+        """).fetchall():
+            print(f"  {m['malware_name']} [{m['type']}] — {m['count']} report(s)")
 
     conn.close()
 
@@ -592,14 +626,13 @@ def run_analysis(
     Loads prompt files, fetches pending reports, analyses with Claude,
     writes results to the analysed DB, updates status in Stage 1 DB.
     """
-    # Load and build the prompt once at startup
     log.info(f"Loading prompt from {system_path} and {schema_path}")
     system_prompt = load_prompt(system_path, schema_path)
     log.info("Prompt loaded successfully")
 
     ensure_skip_reason_column(raw_db)
 
-    client        = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+    client        = anthropic.Anthropic()
     analysed_conn = init_analysed_db(analysed_db)
 
     reports = get_pending_reports(raw_db, limit)
@@ -625,9 +658,9 @@ def run_analysis(
 
             intel_id = write_intelligence(analysed_conn, report, extraction)
 
-            # Already processed in a previous run — skip status update
+            # Already in analysed DB from a previous run — skip status update
             if intel_id == -1:
-                log.info(f"  → Already in analysed DB, skipping")
+                log.info(f"  → Already processed, skipping")
                 continue
 
             is_intel    = extraction.get("is_threat_intel", False)
