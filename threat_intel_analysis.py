@@ -319,6 +319,10 @@ def call_claude(
 
             raw_text = response.content[0].text.strip()
 
+            # Detect truncated response before attempting JSON parse
+            if response.stop_reason == "max_tokens":
+            log.warning(f"Response truncated at max_tokens — consider increasing MAX_TOKENS")
+          
             # Strip markdown fences if Claude adds them despite instructions
             if raw_text.startswith("```"):
                 raw_text = raw_text.split("\n", 1)[1]
