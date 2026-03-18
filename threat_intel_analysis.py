@@ -361,7 +361,7 @@ def write_intelligence(
     Returns the intelligence_reports row id.
     """
     cursor = conn.execute("""
-        INSERT INTO intelligence_reports (
+        INSERT OR IGNORE INTO intelligence_reports (
             raw_report_id, source_name, source_url, title, published_at,
             processed_at, is_threat_intel, skip_reason, confidence,
             report_date, summary, relevance_tags, raw_extraction
@@ -382,6 +382,11 @@ def write_intelligence(
         json.dumps(extraction),
     ))
     intel_id = cursor.lastrowid
+
+    # If no row was inserted (duplicate raw_report_id), signal caller to skip
+    if conn.execute("SELECT changes()").fetchone()[0] == 0:
+        conn.commit()
+        return -1
 
     # If not threat intel, nothing further to write
     if not extraction.get("is_threat_intel"):
@@ -614,7 +619,12 @@ def run_analysis(
         try:
             extraction = call_claude(client, system_prompt, report)
 
-            write_intelligence(analysed_conn, report, extraction)
+            intel_id = write_intelligence(analysed_conn, report, extraction)
+
+            # Already processed in a previous run — skip status update
+            if intel_id == -1:
+                log.info(f"  → Already in analysed DB, skipping")
+                continue
 
             is_intel    = extraction.get("is_threat_intel", False)
             skip_reason = extraction.get("skip_reason")
