@@ -8,13 +8,14 @@
       {
         "name": "Primary name used in the report",
         "aliases": ["alias1", "alias2"],
-        "type": "nation-state | cybercriminal | hacktivist | insider | unknown",
-        "attribution": "Country or organisation if stated, else null"
+        "actor_type": "nation-state | cybercriminal | hacktivist | insider | unknown",
+        "region": "Country or region of origin if stated, else null"
       }
     ],
     "malware_families": [
       {
-        "name": "Malware name",
+        "malware_name": "Clean common name only — no vendor prefixes, no file extensions, no version strings, no detection signatures. E.g. ChatGPTStealer not Trojan:JS/ChatGPTStealer.GVA!MTB",
+        "malware_name_with_type": "CleanName [type] — e.g. ChatGPTStealer [infostealer]",
         "type": "RAT | ransomware | infostealer | backdoor | loader | wiper | rootkit | botnet | other",
         "capabilities": ["capability1", "capability2"]
       }
@@ -22,15 +23,15 @@
     "ttps": [
       {
         "mitre_id": "T1566.001",
-        "name": "Technique name",
-        "tactic": "MITRE tactic name"
+        "mitre_fqn": "Full qualified technique name only — e.g. Phishing: Spearphishing Attachment",
+        "technique_usage": "Concise but specific description of exactly how the threat actor leveraged this technique in this report. Must be specific enough to identify an existing detection or inform building a new one. Include: what tool/file/method was used, what it targeted, and what the outcome was."
       }
     ],
     "iocs": {
       "ips": [],
       "domains": [],
       "hashes": [],
-      "urls": [],
+      "urls": ["Defang all URLs: replace http with hxxp and replace . with [.] — e.g. hxxps://malicious[.]com/payload"],
       "emails": []
     },
     "targets": {
@@ -40,12 +41,17 @@
     },
     "vulnerabilities": [
       {
-        "cve_id": "CVE-YYYY-NNNNN or null if no CVE assigned",
-        "product": "Affected product or platform",
-        "severity": "Critical | High | Medium | Low | Unknown"
+        "cve_id": "CVE-YYYY-NNNNN — strictly the CVE ID and nothing else. null if no CVE assigned.",
+        "cve_description": "Full description of the vulnerability including affected product, version, attack vector, impact, and any exploitation details mentioned in the report."
       }
     ],
     "summary": "Two to three sentence analyst summary of the key threat intelligence findings. Written factually, no marketing language.",
+    "attack_description": "Flowing prose narrative covering Who (threat actor), What (attack type and tools), When (timeframe if known), Where (targeted geography/sector), and Why (motivation if known). Then describe how the attack was conducted in detail — the full kill chain from initial access through to impact. Written from an analyst perspective.",
+    "attack_steps": [
+      "Step 1: [Concise description of first stage of the attack chain]",
+      "Step 2: [Next stage]",
+      "Step 3: [Continue sequentially through the full attack chain to impact]"
+    ],
     "relevance_tags": []
   },
 
@@ -54,12 +60,23 @@
     "Return null for string fields where no data is present. Never omit a field from the schema.",
     "Only include MITRE ATT&CK technique IDs in the format T#### or T####.### — do not invent IDs.",
     "Only include IOCs that are explicitly stated in the report. Do not infer or fabricate IOCs.",
+    "mitre_id must contain strictly the MITRE ID only — e.g. T1566.001. No name, no description.",
+    "mitre_fqn must contain strictly the full qualified technique name only — e.g. Phishing: Spearphishing Attachment. No ID, no description.",
+    "technique_usage must be specific enough to match or inform a detection. Include the exact tool, file, command, or method used.",
+    "malware_name must be the clean common name only. Strip all vendor detection prefixes (Trojan:, Win32/, JS/, etc.), file extensions, variant suffixes (.GVA!MTB, .A, etc.) and hash-like strings. If no clean common name exists, use null.",
+    "malware_name_with_type must be the clean common name followed by [type] in square brackets — e.g. ChatGPTStealer [infostealer].",
+    "cve_id must contain strictly the CVE ID only — e.g. CVE-2025-31191. No product name, no description.",
+    "cve_description must contain the full vulnerability description including product, version, vector, and exploitation details.",
+    "actor_type and region are separate fields. actor_type is the category (nation-state, cybercriminal etc). region is the geographic origin.",
+    "Defang all URLs by replacing http with hxxp and all dots with [.] — e.g. hxxps://malicious[.]com/path. Do NOT defang domains in the domains field or IPs in the ips field.",
+    "attack_description must cover Who/What/When/Where/Why then the full attack chain in flowing prose.",
+    "attack_steps must be a sequential numbered array from initial access through to final impact. Each step should be one concise sentence.",
     "threat_actors.name should use the primary name used by the reporting vendor. Add alternative names from other vendors in aliases.",
     "confidence reflects attribution and detail clarity: high = clearly attributed with strong evidence, medium = partial attribution or unconfirmed claims, low = vague or speculative.",
-    "summary must be written from an analyst perspective, not a marketing perspective. Do not use phrases like 'cutting-edge', 'robust', or 'industry-leading'.",
+    "summary must be written from an analyst perspective, not a marketing perspective. Do not use phrases like cutting-edge, robust, or industry-leading.",
     "relevance_tags must only contain values from the allowed tags list defined in this schema. Do not invent new tags.",
-    "If a vulnerability is mentioned without a CVE ID, still include it in vulnerabilities with cve_id set to null.",
-    "If a threat actor type is not clearly stated, use 'unknown' rather than guessing.",
+    "If a vulnerability is mentioned without a CVE ID, still include it with cve_id set to null and full details in cve_description.",
+    "If a threat actor type is not clearly stated, use unknown rather than guessing.",
     "Always respond with valid JSON only. No preamble, no explanation, no markdown code fences. Just the raw JSON object."
   ],
 
