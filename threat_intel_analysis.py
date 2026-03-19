@@ -326,6 +326,8 @@ def call_claude(
 ) -> dict:
     """
     Send a report to Claude and return the parsed JSON extraction.
+    Uses prompt caching on the system prompt — only fully processed once per
+    run, all subsequent calls read from cache at ~90% cost saving.
     Retries up to RETRY_ATTEMPTS times on transient failures.
     """
     content = report["raw_content"][:CONTENT_PREVIEW_CHARS]
@@ -342,9 +344,31 @@ def call_claude(
             response = client.messages.create(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                system=system_prompt,
+                # System prompt passed as a content block with cache_control.
+                # Anthropic caches it after the first call within the 5-min TTL.
+                # All subsequent calls in the same run read from cache.
+                system=[
+                    {
+                        "type": "text",
+                        "text": system_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
                 messages=[{"role": "user", "content": user_prompt}],
             )
+
+            # Log token usage including cache performance
+            usage = response.usage
+            cache_write = getattr(usage, "cache_creation_input_tokens", 0)
+            cache_read  = getattr(usage, "cache_read_input_tokens", 0)
+            log.debug(
+                f"  Tokens — input: {usage.input_tokens} "
+                f"cache_write: {cache_write} "
+                f"cache_read: {cache_read} "
+                f"output: {usage.output_tokens}"
+            )
+            if cache_read > 0:
+                log.debug(f"  Cache hit — saved ~{cache_read} input tokens")
 
             # Warn if response was truncated
             if response.stop_reason == "max_tokens":
