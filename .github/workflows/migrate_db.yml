@@ -1,0 +1,39 @@
+name: Migrate Database
+
+on:
+  workflow_dispatch:    # manual trigger only
+
+jobs:
+  migrate:
+    name: Add detection columns to ttps table
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run migration
+        run: python migrate_add_detection_columns.py
+
+      - name: Commit migrated database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add threat_intel_analysed.db
+          git diff --staged --quiet && echo "No changes to commit" || git commit -m "chore: migrate ttps table — add detection mapping columns [skip ci]"
+          for i in 1 2 3; do
+            git push && break || {
+              echo "Push attempt $i failed, retrying in 5s..."
+              sleep 5
+              git pull --rebase
+            }
+          done
