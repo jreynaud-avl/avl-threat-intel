@@ -41,7 +41,7 @@ DEFAULT_SYSTEM_PROMPT = Path("prompt_system.txt")
 DEFAULT_SCHEMA_PATH   = Path("prompt_schema.json")
 DEFAULT_LIMIT         = 50
 MODEL                 = "claude-sonnet-4-6"
-MAX_TOKENS            = 8000
+MAX_TOKENS            = 4000
 CONTENT_PREVIEW_CHARS = 12000
 RETRY_ATTEMPTS        = 3
 RETRY_DELAY           = 5
@@ -189,14 +189,17 @@ def init_analysed_db(db_path: Path) -> sqlite3.Connection:
         )
     """)
 
-    # TTPs — mitre_id, mitre_fqn, and technique_usage stored separately
+    # TTPs — mitre_id, mitre_fqn, technique_usage, and detection mapping columns
     conn.execute("""
         CREATE TABLE IF NOT EXISTS ttps (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            intelligence_id   INTEGER NOT NULL REFERENCES intelligence_reports(id),
-            mitre_id          TEXT,   -- strictly the MITRE ID e.g. T1566.001
-            mitre_fqn         TEXT,   -- strictly the full qualified name e.g. Phishing: Spearphishing Attachment
-            technique_usage   TEXT    -- how the threat actor leveraged this technique in this specific report
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            intelligence_id       INTEGER NOT NULL REFERENCES intelligence_reports(id),
+            mitre_id              TEXT,   -- strictly the MITRE ID e.g. T1566.001
+            mitre_fqn             TEXT,   -- strictly the full qualified name e.g. Phishing: Spearphishing Attachment
+            technique_usage       TEXT,   -- how the threat actor leveraged this technique in this specific report
+            mapped_detection_id   TEXT,   -- ID of existing detection that covers this technique (populated by Stage 3)
+            detection_status      TEXT    DEFAULT 'unreviewed'
+                                          -- unreviewed | covered | gap | opportunity
         )
     """)
 
@@ -399,8 +402,8 @@ def write_intelligence(
             processed_at, is_threat_intel, skip_reason, confidence,
             report_date, summary, attack_description, attack_steps,
             relevance_tags, raw_extraction,
-            detection_coverage_reviewed, mapped_detections
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '[]')
+            detection_coverage_reviewed
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     """, (
         report["id"],
         report.get("source_name"),
